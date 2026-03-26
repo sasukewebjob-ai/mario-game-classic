@@ -80,8 +80,10 @@ if(n==='yoshi_egg'){beep(600,.04,'sine',.15);beep(800,.06,'sine',.12,.04)}
 
 const THEME_NOTES=[[330,2],[0,1],[330,1],[0,1],[330,2],[0,1],[262,1],[330,2],[392,4],[196,4],[262,3],[0,1],[196,3],[0,1],[164,3],[0,1],[220,2],[246,2],[233,1],[220,2],[0,1],[196,2],[330,2],[392,2],[440,2],[349,1],[392,1],[0,1],[330,2],[0,1],[262,2],[294,1],[247,2],[0,2],[262,3],[0,1],[196,3],[0,1],[164,3],[0,1],[220,2],[246,2],[233,1],[220,2],[0,1],[196,2],[330,2],[392,2],[440,2],[349,1],[392,1],[0,1],[330,2],[0,1],[262,2],[294,1],[247,2],[0,2]];
 const UG_NOTES=[[131,2],[0,1],[131,1],[0,1],[165,2],[0,1],[131,1],[175,2],[165,2],[156,2],[147,4],[131,2],[0,1],[131,1],[0,1],[165,2],[0,1],[131,1],[175,2],[165,2],[156,2],[147,4],[110,2],[0,1],[110,1],[0,1],[131,2],[0,1],[110,1],[147,2],[131,2],[0,2]];
+const STAR_NOTES=[[523,1],[659,1],[784,1],[1047,1],[784,1],[659,1],[523,1],[0,1],[587,1],[740,1],[880,1],[1175,1],[880,1],[740,1],[587,1],[0,1],[659,1],[831,1],[988,1],[1319,1],[988,1],[831,1],[659,1],[0,1],[784,1],[988,1],[1175,1],[1568,1],[1175,1],[988,1],[784,1],[0,1]];
+const CASTLE_NOTES=[[220,2],[0,1],[220,1],[208,2],[0,1],[196,1],[208,2],[220,1],[0,1],[220,4],[175,2],[0,1],[175,1],[165,2],[0,1],[155,1],[165,2],[175,1],[0,1],[196,4],[220,2],[247,2],[196,2],[220,2],[175,3],[0,1],[165,3],[0,1],[155,2],[165,2],[0,2]];
 let bgmStep=0,bgmTime=0;const BEAT=0.09;
-function scheduleBGM(){const notes=ugMode?UG_NOTES:THEME_NOTES;while(bgmTime<AC.currentTime+0.5){const[freq,len]=notes[bgmStep%notes.length];if(freq>0){const o=AC.createOscillator(),g=AC.createGain();o.connect(g);g.connect(bgmGain);o.type='square';o.frequency.value=freq;g.gain.setValueAtTime(0.08,bgmTime);g.gain.exponentialRampToValueAtTime(0.001,bgmTime+len*BEAT-0.01);o.start(bgmTime);o.stop(bgmTime+len*BEAT)}bgmTime+=len*BEAT;bgmStep++}}
+function scheduleBGM(){const notes=ugMode?UG_NOTES:(starTimer>0?STAR_NOTES:(currentLevel===4?CASTLE_NOTES:THEME_NOTES));while(bgmTime<AC.currentTime+0.5){const[freq,len]=notes[bgmStep%notes.length];if(freq>0){const o=AC.createOscillator(),g=AC.createGain();o.connect(g);g.connect(bgmGain);o.type='square';o.frequency.value=freq;g.gain.setValueAtTime(0.08,bgmTime);g.gain.exponentialRampToValueAtTime(0.001,bgmTime+len*BEAT-0.01);o.start(bgmTime);o.stop(bgmTime+len*BEAT)}bgmTime+=len*BEAT;bgmStep++}}
 function startBGM(){stopBGM();bgmGain=AC.createGain();bgmGain.gain.value=1;bgmGain.connect(AC.destination);bgmStep=0;bgmTime=AC.currentTime;scheduleBGM()}
 function stopBGM(){if(bgmGain){bgmGain.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.2);bgmGain=null}}
 
@@ -93,14 +95,20 @@ const movingPlats=[],springs=[],hammers=[],cannons=[],bulletBills=[];
 const particles=[],scorePopups=[],blockAnims=[];
 let lastFireFrame=-999,ugMode=false,savedOW=null,starTimer=0,combo=0,comboTimer=0;
 let checkpoint=null,checkpointReached=false;
+let selectedStage=1;
+let peach={alive:false,x:0,y:0,w:30,h:52,vx:0,caught:false,walkFrame:0,walkTimer:0};
+let peachChase=null;
+const lavaFlames=[];
+let bowser={alive:false,x:0,y:0,w:64,h:72,hp:3,maxHp:3,vx:-1.5,vy:0,facing:-1,hurtTimer:0,fireTimer:130,jumpTimer:220,onGround:false,state:'walk',deadTimer:0};
+const bowserFire=[];
 const flagPole={x:LW-500,h:320};
 
 // === YOSHI STATE ===
 const yoshiEggs=[];  // thrown egg projectiles
 const yoshiItems=[]; // hatching eggs on ground
 let yoshi={x:0,y:0,w:30,h:40,vx:0,vy:0,alive:false,mounted:false,facing:1,walkFrame:0,walkTimer:0,
-  tongueOut:0,tongueLen:0,tongueMaxLen:60,eatCount:0,eggsReady:0,onGround:false,
-  runAway:false,runTimer:0,flutterTimer:0};
+  tongueOut:0,tongueLen:0,tongueMaxLen:90,eatCount:0,eggsReady:0,onGround:false,
+  runAway:false,runTimer:0,flutterTimer:0,idleTimer:0};
 
 // === MARIO ===
 const mario={x:80,y:H-3*TILE,w:26,h:32,vx:0,vy:0,onGround:false,facing:1,walkFrame:0,walkTimer:0,inv:0,dead:false,big:false,power:'none'};
@@ -124,7 +132,7 @@ function addStairD(x,steps){for(let i=0;i<steps;i++)for(let j=i;j<steps;j++)addB
 
 function buildLevel(){
 [platforms,pipes,coinItems,enemies,mushrooms,fireballs,piranhas,particles,scorePopups,blockAnims,movingPlats,springs,cannons,bulletBills,yoshiEggs,yoshiItems].forEach(a=>a.length=0);
-hammers.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;
+hammers.length=0;lavaFlames.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;
 yoshi.alive=false;yoshi.mounted=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.runAway=false;
 
 // Ground - 2 narrow gaps only (easy)
@@ -135,14 +143,14 @@ for(let x=0;x<LW;x+=TILE)if(!gaps.some(g=>x>=g.s&&x<g.e))platforms.push({x,y:H-T
 addRow(160,H-5*TILE,1,'q',true);addRow(288,H-5*TILE,2,'brick');
 addRow(576,H-5*TILE,2,'brick');addRow(640,H-5*TILE,1,'q',true);addRow(800,H-5*TILE,3,'brick');
 // Zone 2
-addRow(1024,H-5*TILE,1,'q');addRow(1152,H-7*TILE,2,'brick');addRow(1280,H-5*TILE,1,'q',true);
+addRow(1024,H-5*TILE,1,'q');addRow(1152,H-7*TILE,2,'brick');
 addRow(1440,H-5*TILE,2,'brick');addRow(1600,H-5*TILE,2,'g');addRow(1700,H-7*TILE,2,'g');
 // Zone 3
 addRow(1900,H-5*TILE,2,'q');addRow(2050,H-5*TILE,3,'brick');addRow(2100,H-7*TILE,1,'q',true);
 addStair(2150,3);
 // Zone 4 (after gap 1)
 addRow(2450,H-5*TILE,2,'q');addRow(2600,H-5*TILE,3,'brick');addRow(2750,H-7*TILE,2,'q',true);
-addRow(2900,H-5*TILE,2,'brick');addRow(3100,H-5*TILE,1,'q');
+addRow(2900,H-5*TILE,2,'brick');
 addRow(3300,H-5*TILE,2,'g');addRow(3400,H-7*TILE,2,'g');addRow(3550,H-5*TILE,2,'g');
 // Zone 5
 addRow(3750,H-5*TILE,1,'q');addRow(3900,H-5*TILE,2,'brick');addRow(4050,H-7*TILE,2,'q',true);
@@ -155,25 +163,25 @@ addRow(6000,H-5*TILE,2,'q',true);addRow(6150,H-5*TILE,3,'brick');
 addRow(6350,H-5*TILE,2,'brick');addRow(6500,H-7*TILE,2,'q');addStair(6700,8);
 
 // Pipes
-[[500,2,false],[1350,3,true],[3200,2,false],[5500,2,false],[7200,4,false]].forEach(([px,ph,warp])=>{
-pipes.push({x:px,y:H-TILE-ph*TILE,w:TILE*2,h:ph*TILE,bounceOffset:0,isWarp:warp})});
+[[500,2,false],[1350,3,'coin'],[3200,2,false],[5500,2,false],[7200,4,false]].forEach(([px,ph,warp])=>{
+pipes.push({x:px,y:H-TILE-ph*TILE,w:TILE*2,h:ph*TILE,bounceOffset:0,isWarp:!!warp,variant:warp||null})});
 pipes.forEach((p,i)=>{if(p.isWarp)return;piranhas.push({x:p.x+8,baseY:p.y,y:p.y,w:16,h:TILE,phase:i*1.5,alive:true,maxUp:TILE*1.5})});
 
 // Coins
 for(let i=0;i<50;i++)coinItems.push({x:150+i*148,y:H-8*TILE,collected:false});
 
 // Enemies - goombas & few koopas only, well spaced
-[{x:350,t:'goomba'},{x:550,t:'goomba'},{x:700,t:'goomba'},
-{x:1050,t:'koopa'},{x:1250,t:'goomba'},{x:1480,t:'goomba'},
-{x:1700,t:'goomba'},{x:1900,t:'goomba'},
-{x:2050,t:'koopa'},{x:2500,t:'goomba'},{x:2700,t:'goomba'},
-{x:2900,t:'goomba'},{x:3100,t:'koopa'},{x:3400,t:'goomba'},
-{x:3650,t:'goomba'},{x:3900,t:'goomba'},{x:4200,t:'koopa'},
-{x:4450,t:'goomba'},{x:5000,t:'goomba'},{x:5200,t:'goomba'},
-{x:5450,t:'koopa'},{x:5700,t:'goomba'},
-{x:5950,t:'goomba'},{x:6200,t:'goomba'},{x:6450,t:'koopa'},
-{x:6700,t:'goomba'},{x:6900,t:'goomba'},
-{x:280,t:'parakoopa'},{x:2800,t:'parakoopa'},{x:5300,t:'parakoopa'}
+[{x:350,t:'goomba'},{x:450,t:'goomba'},{x:550,t:'goomba'},{x:700,t:'goomba'},{x:820,t:'goomba'},
+{x:1050,t:'koopa'},{x:1150,t:'goomba'},{x:1250,t:'goomba'},{x:1370,t:'goomba'},{x:1480,t:'goomba'},{x:1580,t:'goomba'},
+{x:1700,t:'goomba'},{x:1800,t:'goomba'},{x:1900,t:'goomba'},{x:2000,t:'goomba'},
+{x:2050,t:'koopa'},{x:2500,t:'goomba'},{x:2600,t:'goomba'},{x:2700,t:'goomba'},{x:2820,t:'goomba'},
+{x:2900,t:'goomba'},{x:3100,t:'koopa'},{x:3250,t:'goomba'},{x:3400,t:'goomba'},{x:3520,t:'goomba'},
+{x:3650,t:'goomba'},{x:3800,t:'goomba'},{x:3900,t:'goomba'},{x:4050,t:'goomba'},{x:4200,t:'koopa'},
+{x:4350,t:'goomba'},{x:4450,t:'goomba'},{x:4550,t:'goomba'},{x:5000,t:'goomba'},{x:5100,t:'goomba'},{x:5200,t:'goomba'},
+{x:5450,t:'koopa'},{x:5600,t:'goomba'},{x:5700,t:'goomba'},{x:5820,t:'goomba'},
+{x:5950,t:'goomba'},{x:6100,t:'goomba'},{x:6200,t:'goomba'},{x:6300,t:'goomba'},{x:6450,t:'koopa'},
+{x:6600,t:'goomba'},{x:6700,t:'goomba'},{x:6800,t:'goomba'},{x:6900,t:'goomba'},{x:7050,t:'goomba'},{x:7200,t:'goomba'},{x:7350,t:'goomba'},
+{x:2800,t:'parakoopa'},{x:5300,t:'parakoopa'}
 ].forEach(({x,t})=>{
 if(t==='parakoopa'){const by=H-5*TILE;enemies.push({x,y:by,w:TILE,h:TILE*1.2,vx:-1.5,vy:0,alive:true,type:'parakoopa',state:'walk',flying:true,baseY:by,phase:Math.random()*Math.PI*2,shellTimer:0,walkFrame:0,walkTimer:0})}
 else enemies.push({x,y:H-2*TILE,w:TILE,h:t==='koopa'?TILE*1.2:TILE,vx:-1.5,vy:0,alive:true,type:t,state:'walk',shellTimer:0,walkFrame:0,walkTimer:0});
@@ -202,8 +210,9 @@ platforms.push({x:224,y:H-5*TILE,w:TILE,h:TILE,type:'yoshiEgg',hit:false,bounceO
 
 function buildLevel2(){
 [platforms,pipes,coinItems,enemies,mushrooms,fireballs,piranhas,particles,scorePopups,blockAnims,movingPlats,springs,cannons,bulletBills,yoshiEggs,yoshiItems].forEach(a=>a.length=0);
-hammers.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;
-yoshi.alive=false;yoshi.mounted=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.runAway=false;
+hammers.length=0;lavaFlames.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;
+if(!yoshi.mounted){yoshi.alive=false;yoshi.eatCount=0;}
+yoshi.runAway=false;yoshi.runTimer=0;yoshi.eggsReady=0;yoshi.idleTimer=0;
 
 // Ground - 3 gaps (medium)
 const gaps=[{s:1800,e:1900},{s:3300,e:3460},{s:4300,e:4420},{s:5050,e:5210},{s:6500,e:6660}];
@@ -237,8 +246,8 @@ addRow(6200,H-5*TILE,3,'brick');addRow(6300,H-9*TILE,2,'q');
 addStair(6700,8);addRow(7000,H-5*TILE,2,'q');
 
 // Pipes
-[[700,2,false],[1400,3,true],[2200,2,false],[4050,3,true],[5700,2,false],[6300,2,false],[7200,4,false]].forEach(([px,ph,warp])=>{
-pipes.push({x:px,y:H-TILE-ph*TILE,w:TILE*2,h:ph*TILE,bounceOffset:0,isWarp:warp})});
+[[700,2,false],[1400,3,'goomba'],[2200,2,false],[4050,3,'mushroom'],[5700,2,false],[6300,2,false],[7200,4,false]].forEach(([px,ph,warp])=>{
+pipes.push({x:px,y:H-TILE-ph*TILE,w:TILE*2,h:ph*TILE,bounceOffset:0,isWarp:!!warp,variant:warp||null})});
 // Piranhas
 pipes.forEach((p,i)=>{if(p.isWarp)return;piranhas.push({x:p.x+8,baseY:p.y,y:p.y,w:16,h:TILE,phase:i*1.5,alive:true,maxUp:TILE*1.5})});
 // Coins
@@ -305,8 +314,9 @@ platforms.push({x:3600,y:H-5*TILE,w:TILE,h:TILE,type:'yoshiEgg',hit:false,bounce
 
 function buildLevel3(){
 [platforms,pipes,coinItems,enemies,mushrooms,fireballs,piranhas,particles,scorePopups,blockAnims,movingPlats,springs,cannons,bulletBills,yoshiEggs,yoshiItems].forEach(a=>a.length=0);
-hammers.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;
-yoshi.alive=false;yoshi.mounted=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.runAway=false;
+hammers.length=0;lavaFlames.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;
+if(!yoshi.mounted){yoshi.alive=false;yoshi.eatCount=0;}
+yoshi.runAway=false;yoshi.runTimer=0;yoshi.eggsReady=0;yoshi.idleTimer=0;
 
 // Ground with gaps
 const gaps=[{s:1700,e:1870},{s:3100,e:3300},{s:4100,e:4260},{s:5000,e:5180},{s:5800,e:5940},{s:6600,e:6780}];
@@ -337,8 +347,8 @@ addRow(6270,H-5*TILE,3,'brick');addRow(6430,H-7*TILE,2,'q',true);
 addRow(6810,H-5*TILE,2,'q');addRow(6970,H-7*TILE,2,'brick');addStair(7050,8);
 
 // Pipes
-[[680,2,false],[1350,3,true],[2150,2,false],[3380,2,false],[4000,3,true],[5600,2,false],[6200,3,false],[7150,4,false]].forEach(([px,ph,warp])=>{
-pipes.push({x:px,y:H-TILE-ph*TILE,w:TILE*2,h:ph*TILE,bounceOffset:0,isWarp:warp})});
+[[680,2,false],[1350,3,'danger1up'],[2150,2,false],[3380,2,false],[4350,3,'star'],[5600,2,false],[6200,3,false],[7150,4,false]].forEach(([px,ph,warp])=>{
+pipes.push({x:px,y:H-TILE-ph*TILE,w:TILE*2,h:ph*TILE,bounceOffset:0,isWarp:!!warp,variant:warp||null})});
 pipes.forEach((p,i)=>{if(p.isWarp)return;piranhas.push({x:p.x+8,baseY:p.y,y:p.y,w:16,h:TILE,phase:i*1.5,alive:true,maxUp:TILE*1.5})});
 
 // Coins
@@ -388,7 +398,6 @@ springs.push({x:900,y:H-TILE-24,w:24,h:24,compressed:0},{x:2080,y:H-TILE-24,w:24
 // Cannons
 cannons.push({x:1050,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:130,timer:70},
 {x:2600,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:110,timer:50},
-{x:3730,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:120,timer:90},
 {x:4880,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:100,timer:40},
 {x:5750,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:105,timer:60},
 {x:6500,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:95,timer:30});
@@ -404,21 +413,174 @@ platforms.push({x:750,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlo
 platforms.push({x:4350,y:H-9*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlock:true,hitsLeft:6,bounceOffset:0});
 // Yoshi egg block
 platforms.push({x:450,y:H-5*TILE,w:TILE,h:TILE,type:'yoshiEgg',hit:false,bounceOffset:0});
+// チェックポイント以降: きのこ×2 スター×2
+platforms.push({x:4720,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:6060,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:5280,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,hasStar:true,bounceOffset:0});
+platforms.push({x:6820,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,hasStar:true,bounceOffset:0});
 }
 
-function buildUnderground(){
+function buildLevel4(){
+[platforms,pipes,coinItems,enemies,mushrooms,fireballs,piranhas,particles,scorePopups,blockAnims,movingPlats,springs,cannons,bulletBills,yoshiEggs,yoshiItems].forEach(a=>a.length=0);
+hammers.length=0;bowserFire.length=0;lavaFlames.length=0;starTimer=0;combo=0;comboTimer=0;checkpointReached=false;checkpoint=null;goalSlide=null;ugMode=false;savedOW=null;peach.alive=false;peachChase=null;
+if(!yoshi.mounted){yoshi.alive=false;yoshi.eatCount=0;}
+yoshi.runAway=false;yoshi.runTimer=0;yoshi.eggsReady=0;yoshi.idleTimer=0;
+// Ground with lava pits
+const gaps=[{s:1800,e:2010},{s:3200,e:3420},{s:5050,e:5270}];
+for(let x=0;x<LW;x+=TILE)if(!gaps.some(g=>x>=g.s&&x<g.e))platforms.push({x,y:H-TILE,w:TILE,h:TILE,type:'ground',bounceOffset:0});
+// Castle brick walls and blocks
+addRow(0,H-5*TILE,3,'brick');
+addRow(350,H-5*TILE,4,'brick');addRow(450,H-9*TILE,3,'q');
+addRow(800,H-7*TILE,3,'brick');
+addRow(1100,H-5*TILE,5,'brick');
+addRow(1500,H-7*TILE,3,'brick');
+addRow(2050,H-5*TILE,4,'brick');addRow(2050,H-9*TILE,3,'q');
+addRow(2450,H-7*TILE,3,'brick');
+addRow(2750,H-5*TILE,5,'brick');
+addRow(3500,H-5*TILE,4,'brick');addRow(3500,H-9*TILE,3,'q');
+addRow(3900,H-7*TILE,3,'brick');
+addRow(4250,H-5*TILE,4,'brick');
+addRow(4650,H-7*TILE,3,'brick');
+addRow(5350,H-5*TILE,4,'brick');addRow(5350,H-9*TILE,3,'q');
+addRow(5750,H-7*TILE,3,'brick');
+addRow(6050,H-5*TILE,4,'brick');
+// Staircase to boss arena
+addStair(6300,5);
+// Castle gate wall (passage at y=192-255 so Mario can jump through from staircase top)
+[0,32,64,96,128,160,256,288,320,352,384].forEach(wy=>{addB(6560,wy,'brick');addB(6592,wy,'brick');});
+// Coins
+for(let i=0;i<18;i++)coinItems.push({x:350+i*320,y:H-9*TILE,collected:false});
+// Enemies
+[{x:620,t:'goomba'},{x:880,t:'koopa'},
+{x:1100,t:'goomba'},{x:1380,t:'koopa'},{x:1480,t:'goomba'},{x:1600,t:'goomba'},
+{x:2050,t:'koopa'},{x:2180,t:'goomba'},{x:2300,t:'goomba'},{x:2600,t:'koopa'},{x:2700,t:'goomba'},
+{x:3500,t:'koopa'},{x:3620,t:'goomba'},{x:3740,t:'koopa'},
+{x:4100,t:'goomba'},{x:4200,t:'goomba'},{x:4600,t:'goomba'},{x:4720,t:'koopa'},
+{x:5350,t:'koopa'},{x:5480,t:'goomba'},{x:5600,t:'goomba'},
+{x:5900,t:'koopa'},{x:6050,t:'goomba'}
+].forEach(({x,t})=>{
+let e;
+if(t==='goomba')e={x,y:H-2*TILE,w:TILE,h:TILE,vx:-1,vy:0,alive:true,type:'goomba',state:'walk',squishT:0,walkFrame:0,walkTimer:0,onGround:false};
+else if(t==='koopa')e={x,y:H-2.5*TILE,w:TILE,h:TILE*1.25,vx:-1,vy:0,alive:true,type:'koopa',state:'walk',shellTimer:0,walkFrame:0,walkTimer:0,onGround:false,facing:-1};
+else if(t==='hammerBro')e={x,y:H-2.5*TILE,w:TILE,h:TILE*1.3,vx:-0.5+Math.random(),vy:0,alive:true,type:'hammerBro',state:'walk',shellTimer:0,walkFrame:0,walkTimer:0,hammerTimer:60+Math.floor(Math.random()*60),jumpTimer:120+Math.floor(Math.random()*80),onGround:false};
+if(e)enemies.push(e);
+});
+// Moving platforms over lava pits
+movingPlats.push(
+{x:1860,y:H-4*TILE,w:TILE*2,h:12,type:'h',ox:1860,range:80,spd:1.2},
+{x:3270,y:H-4*TILE,w:TILE*2,h:12,type:'h',ox:3270,range:90,spd:1.4},
+{x:5110,y:H-4*TILE,w:TILE*2,h:12,type:'h',ox:5110,range:90,spd:1.5}
+);
+// Cannons
+cannons.push(
+{x:580,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:140,timer:70},
+{x:1550,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:125,timer:50},
+{x:2800,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:130,timer:90},
+{x:4300,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:115,timer:40},
+{x:5680,y:H-TILE*2,w:TILE,h:TILE*2,fireRate:105,timer:60}
+);
+// Checkpoint
+checkpoint={x:3700,y:H-TILE,reached:false};
+// Special blocks (push only – no addRow at same coordinates)
+platforms.push({x:200,y:H-5*TILE,w:TILE,h:TILE,type:'yoshiEgg',hit:false,bounceOffset:0});
+platforms.push({x:600,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:1000,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:2400,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:3050,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:3700,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:4400,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:4950,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:5450,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:5800,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:1380,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasStar:true,bounceOffset:0});
+platforms.push({x:4800,y:H-9*TILE,w:TILE,h:TILE,type:'question',hit:false,hasStar:true,bounceOffset:0});
+platforms.push({x:2752,y:H-9*TILE,w:TILE,h:TILE,type:'hidden',hit:false,has1UP:true,bounceOffset:0});
+platforms.push({x:4672,y:H-9*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlock:true,hitsLeft:8,bounceOffset:0});
+// Lava flames: geysers (in pits) and floor jets (on solid ground)
+// {x, w, maxH, period, phase, curH}
+[
+  // Geysers inside lava pits (tall, dangerous for moving platform crossings)
+  {x:1875,w:22,maxH:210,period:170,phase:0},
+  {x:1940,w:18,maxH:170,period:170,phase:55},
+  {x:3305,w:22,maxH:210,period:155,phase:0},
+  {x:3375,w:18,maxH:170,period:155,phase:70},
+  {x:5120,w:22,maxH:210,period:145,phase:0},
+  {x:5200,w:18,maxH:170,period:145,phase:45},
+  // Floor jets on solid ground (shorter, duck/jump to avoid)
+  {x:450,w:16,maxH:80,period:220,phase:70},
+  {x:700,w:16,maxH:90,period:210,phase:40},
+  {x:950,w:16,maxH:75,period:200,phase:130},
+  {x:1280,w:16,maxH:80,period:190,phase:0},
+  {x:1680,w:16,maxH:85,period:215,phase:90},
+  {x:2150,w:16,maxH:90,period:205,phase:50},
+  {x:2560,w:16,maxH:90,period:200,phase:80},
+  {x:2950,w:16,maxH:80,period:185,phase:160},
+  {x:3600,w:16,maxH:85,period:195,phase:30},
+  {x:4020,w:16,maxH:85,period:180,phase:110},
+  {x:4180,w:16,maxH:75,period:210,phase:170},
+  {x:4550,w:16,maxH:85,period:190,phase:60},
+  {x:4870,w:16,maxH:90,period:175,phase:20},
+  {x:5480,w:16,maxH:80,period:200,phase:100},
+  {x:5620,w:16,maxH:85,period:195,phase:150},
+  {x:5800,w:16,maxH:75,period:185,phase:40}
+].forEach(f=>lavaFlames.push({...f,curH:0}));
+// Bowser
+Object.assign(bowser,{alive:true,x:7000,y:H-TILE-72,w:64,h:72,hp:3,maxHp:3,vx:-1.5,vy:0,facing:-1,hurtTimer:0,fireTimer:130,jumpTimer:220,onGround:false,state:'walk',deadTimer:0});
+}
+
+function buildUnderground(variant){
+// 共通構造: 床・天井・出口パイプ・右壁
 for(let x=0;x<W;x+=TILE){platforms.push({x,y:H-TILE,w:TILE,h:TILE,type:'ground',bounceOffset:0});
 if(x>0&&x<W-TILE)platforms.push({x,y:0,w:TILE,h:TILE,type:'ground',bounceOffset:0})}
-addRow(100,H-4*TILE,3,'brick');addRow(180,H-7*TILE,3,'q',true);
-addRow(350,H-4*TILE,4,'brick');addRow(430,H-8*TILE,2,'q',true);
-addRow(550,H-5*TILE,5,'brick');addRow(650,H-9*TILE,3,'q',true);
-for(let i=0;i<18;i++)coinItems.push({x:80+i*38,y:H-6*TILE,collected:false});
-for(let i=0;i<12;i++)coinItems.push({x:130+i*50,y:H-9*TILE,collected:false});
-[{x:250},{x:500}].forEach(({x})=>{enemies.push({x,y:H-2*TILE,w:TILE,h:TILE,vx:-1.3,vy:0,alive:true,type:'goomba',state:'walk',shellTimer:0,walkFrame:0,walkTimer:0})});
 pipes.push({x:W-3*TILE,y:H-TILE-3*TILE,w:TILE*2,h:3*TILE,bounceOffset:0,isWarp:false,isExit:true});
-// Right wall: blocks above pipe-top level to prevent fall-off
 for(let wy=TILE;wy<H-4*TILE;wy+=TILE)platforms.push({x:W-TILE,y:wy,w:TILE,h:TILE,type:'ground',bounceOffset:0});
-}
+const G=(x,y,w,h,alive=true)=>({x,y,w:w||TILE,h:h||TILE,vx:-1.3,vy:0,alive,type:'goomba',state:'walk',shellTimer:0,walkFrame:0,walkTimer:0});
+const K=(x,y)=>({x,y,w:TILE,h:TILE*1.2,vx:-1.3,vy:0,alive:true,type:'koopa',state:'walk',shellTimer:0,walkFrame:0,walkTimer:0});
+if(variant==='goomba'){
+// ★クリボーまつり★ クリボー10体 倒すと報酬
+addRow(80,H-4*TILE,2,'brick');addRow(280,H-5*TILE,3,'brick');addRow(500,H-6*TILE,2,'brick');
+for(let i=0;i<10;i++)enemies.push(G(70+i*64,H-2*TILE));
+for(let i=0;i<22;i++)coinItems.push({x:55+i*29,y:H-9*TILE,collected:false});
+platforms.push({x:210,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:480,y:H-8*TILE,w:TILE,h:TILE,type:'hidden',hit:false,has1UP:true,bounceOffset:0});
+}else if(variant==='mushroom'){
+// ★パワーアップの部屋★ きのこ×3 ＋ かくしスター
+addRow(80,H-4*TILE,2,'brick');addRow(300,H-5*TILE,2,'brick');addRow(490,H-4*TILE,2,'brick');
+platforms.push({x:140,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:340,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:540,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:390,y:H-9*TILE,w:TILE,h:TILE,type:'hidden',hit:false,hasStar:true,bounceOffset:0});
+[{x:200},{x:420},{x:620}].forEach(({x})=>enemies.push(K(x,H-2*TILE)));
+for(let i=0;i<16;i++)coinItems.push({x:65+i*40,y:H-8*TILE,collected:false});
+}else if(variant==='danger1up'){
+// ★1UPトリプルチャレンジ★ 1UPはてなブロック×3 ＋ 火柱4本（火柱のみ）
+addRow(80,H-4*TILE,2,'brick');addRow(310,H-4*TILE,2,'brick');addRow(540,H-4*TILE,2,'brick');
+platforms.push({x:140,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,has1UP:true,bounceOffset:0});
+platforms.push({x:370,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,has1UP:true,bounceOffset:0});
+platforms.push({x:600,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,has1UP:true,bounceOffset:0});
+[{x:120,ph:0},{x:215,ph:65},{x:360,ph:30},{x:570,ph:50}].forEach(
+({x,ph})=>lavaFlames.push({x,y:H-TILE,w:22,maxH:85,curH:0,phase:ph,period:130}));
+}else if(variant==='star'){
+// ★スターフェスティバル★ スター取って11体一斉倒し！
+addRow(90,H-4*TILE,2,'brick');addRow(300,H-5*TILE,3,'brick');addRow(520,H-4*TILE,3,'brick');
+platforms.push({x:370,y:H-5*TILE,w:TILE,h:TILE,type:'question',hit:false,hasStar:true,bounceOffset:0});
+platforms.push({x:220,y:H-8*TILE,w:TILE,h:TILE,type:'hidden',hit:false,has1UP:true,bounceOffset:0});
+[80,155,230,310,450,525,600,660].forEach(x=>enemies.push(G(x,H-2*TILE)));
+[{x:190},{x:400},{x:590}].forEach(({x})=>enemies.push(K(x,H-2*TILE)));
+for(let i=0;i<26;i++)coinItems.push({x:55+i*25,y:H-8*TILE,collected:false});
+platforms.push({x:480,y:H-7*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlock:true,hitsLeft:8,bounceOffset:0});
+}else{
+// ★コインの楽園★ (default/'coin') コイン大量＋コインブロック×3
+addRow(100,H-4*TILE,3,'brick');addRow(300,H-6*TILE,3,'brick');addRow(490,H-4*TILE,3,'brick');
+for(let i=0;i<27;i++)coinItems.push({x:55+i*23,y:H-7*TILE,collected:false});
+for(let i=0;i<19;i++)coinItems.push({x:95+i*29,y:H-9*TILE,collected:false});
+for(let i=0;i<11;i++)coinItems.push({x:195+i*31,y:H-11*TILE,collected:false});
+platforms.push({x:165,y:H-6*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlock:true,hitsLeft:12,bounceOffset:0});
+platforms.push({x:385,y:H-8*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlock:true,hitsLeft:12,bounceOffset:0});
+platforms.push({x:565,y:H-6*TILE,w:TILE,h:TILE,type:'question',hit:false,coinBlock:true,hitsLeft:12,bounceOffset:0});
+platforms.push({x:280,y:H-4*TILE,w:TILE,h:TILE,type:'question',hit:false,hasMush:true,bounceOffset:0});
+platforms.push({x:450,y:H-9*TILE,w:TILE,h:TILE,type:'hidden',hit:false,hasStar:true,bounceOffset:0});
+}}
 
 // === HELPERS ===
 function overlap(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by}
@@ -431,8 +593,8 @@ function updateParticles(){for(let i=particles.length-1;i>=0;i--){const p=partic
 // === INPUT ===
 const keys={},btn={left:false,right:false,jump:false,dash:false,down:false};
 document.addEventListener('keydown',e=>{keys[e.code]=true;
-if(state==='start'&&(e.code==='Space'||e.code==='Enter'))startGame();
-if((state==='dead'||state==='over'||state==='win')&&(e.code==='Space'||e.code==='Enter')){if(state==='over'||state==='win'){score=0;coins=0;lives=3;mario.big=false;mario.power='none'}startGame()}
+if(state==='start'){if(e.code==='ArrowLeft'&&selectedStage>1){selectedStage--;e.preventDefault();}if(e.code==='ArrowRight'&&selectedStage<4){selectedStage++;e.preventDefault();}if(e.code==='Digit1')selectedStage=1;if(e.code==='Digit2')selectedStage=2;if(e.code==='Digit3')selectedStage=3;if(e.code==='Digit4')selectedStage=4;if(e.code==='Space'||e.code==='Enter')startFromStage(selectedStage);}
+if((state==='dead'||state==='over'||state==='win')&&(e.code==='Space'||e.code==='Enter')){if(state==='over'||state==='win'){score=0;coins=0;lives=3;mario.big=false;mario.power='none';startGame()}else{restartCurrentLevel()}}
 if(state==='play'&&(e.code==='Space'||e.code==='ArrowUp')&&mario.onGround&&!mario.dead)doJump();
 if(state==='play'&&e.code==='KeyZ'&&!mario.dead){if(yoshi.mounted&&yoshi.alive)yoshiAction();else if(mario.power==='fire')shootFireball()}
 if(state==='play'&&e.code==='ArrowDown'&&mario.onGround&&!mario.dead)checkPipeEntry();
@@ -452,9 +614,9 @@ if(ugMode){for(const p of pipes){if(!p.isExit)continue;const onTop=mario.y+mario
 for(const p of pipes){if(!p.isWarp||p.used)continue;const onTop=mario.y+mario.h>=p.y-2&&mario.y+mario.h<=p.y+4;const above=mario.x+mario.w>p.x&&mario.x<p.x+p.w;if(onTop&&above){p.used=true;enterUnderground(p);return}}
 }
 function enterUnderground(p){savedOW={platforms:[...platforms],pipes:[...pipes],coinItems:[...coinItems],enemies:[...enemies],mushrooms:[...mushrooms],piranhas:[...piranhas],movingPlats:[...movingPlats],springs:[...springs],cannons:[...cannons],cam,mx:mario.x,my:mario.y};
-platforms.length=0;pipes.length=0;coinItems.length=0;enemies.length=0;mushrooms.length=0;piranhas.length=0;movingPlats.length=0;springs.length=0;cannons.length=0;bulletBills.length=0;hammers.length=0;yoshiEggs.length=0;yoshiItems.length=0;
-buildUnderground();cam=0;mario.x=60;mario.y=H-3*TILE;mario.vx=0;mario.vy=0;ugMode=true;score+=500;sfx('flag');stopBGM();try{startBGM()}catch(ex){}}
-function exitUnderground(){if(!savedOW)return;platforms.length=0;platforms.push(...savedOW.platforms);pipes.length=0;pipes.push(...savedOW.pipes);coinItems.length=0;coinItems.push(...savedOW.coinItems);enemies.length=0;enemies.push(...savedOW.enemies);mushrooms.length=0;mushrooms.push(...savedOW.mushrooms);piranhas.length=0;piranhas.push(...savedOW.piranhas);movingPlats.length=0;movingPlats.push(...(savedOW.movingPlats||[]));springs.length=0;springs.push(...(savedOW.springs||[]));cannons.length=0;cannons.push(...(savedOW.cannons||[]));bulletBills.length=0;hammers.length=0;yoshiEggs.length=0;yoshiItems.length=0;cam=savedOW.cam;mario.x=savedOW.mx;mario.y=savedOW.my-TILE*2;mario.vy=-10;ugMode=false;savedOW=null;score+=1000;updateHUD();sfx('flag');stopBGM();try{startBGM()}catch(ex){}}
+platforms.length=0;pipes.length=0;coinItems.length=0;enemies.length=0;mushrooms.length=0;piranhas.length=0;movingPlats.length=0;springs.length=0;cannons.length=0;bulletBills.length=0;hammers.length=0;yoshiEggs.length=0;yoshiItems.length=0;lavaFlames.length=0;
+buildUnderground(p.variant||'coin');cam=0;mario.x=60;mario.y=H-3*TILE;mario.vx=0;mario.vy=0;ugMode=true;score+=500;sfx('flag');stopBGM();try{startBGM()}catch(ex){}}
+function exitUnderground(){if(!savedOW)return;platforms.length=0;platforms.push(...savedOW.platforms);pipes.length=0;pipes.push(...savedOW.pipes);coinItems.length=0;coinItems.push(...savedOW.coinItems);enemies.length=0;enemies.push(...savedOW.enemies);mushrooms.length=0;mushrooms.push(...savedOW.mushrooms);piranhas.length=0;piranhas.push(...savedOW.piranhas);movingPlats.length=0;movingPlats.push(...(savedOW.movingPlats||[]));springs.length=0;springs.push(...(savedOW.springs||[]));cannons.length=0;cannons.push(...(savedOW.cannons||[]));bulletBills.length=0;hammers.length=0;yoshiEggs.length=0;yoshiItems.length=0;lavaFlames.length=0;cam=savedOW.cam;mario.x=savedOW.mx;mario.y=savedOW.my-TILE*2;mario.vy=-10;ugMode=false;savedOW=null;score+=1000;updateHUD();sfx('flag');stopBGM();try{startBGM()}catch(ex){}}
 
 function shootFireball(){if(frame-lastFireFrame<18||fireballs.length>=2)return;lastFireFrame=frame;fireballs.push({x:mario.x+(mario.facing===1?mario.w-4:0),y:mario.y+mario.h/2-6,w:12,h:12,vx:mario.facing*9,vy:-3,bounces:0,alive:true});try{beep(880,.04,'square',.12);beep(1100,.06,'square',.1,.04)}catch(e){}}
 
@@ -475,7 +637,7 @@ if(hurt){yoshi.runAway=true;yoshi.runTimer=180;yoshi.vx=mario.facing*3;sfx('yosh
 
 function setupBtn(id,key){const el=document.getElementById(id);
 const press=e=>{e.preventDefault();btn[key]=true;el.classList.add('pressed');
-if(key==='jump'){if(state==='play'&&mario.onGround&&!mario.dead)doJump();if(state==='start')startGame();if(state==='dead'||state==='over'||state==='win'){if(state==='over'||state==='win'){score=0;coins=0;lives=3;mario.big=false;mario.power='none'}startGame()}}else{if(state==='start')startGame()}};
+if(key==='jump'){if(state==='play'&&mario.onGround&&!mario.dead)doJump();if(state==='start')startFromStage(selectedStage);if(state==='dead'||state==='over'||state==='win'){if(state==='over'||state==='win'){score=0;coins=0;lives=3;mario.big=false;mario.power='none';startGame()}else{restartCurrentLevel()}}}else{if(state==='start')startGame()}};
 const release=e=>{e.preventDefault();btn[key]=false;el.classList.remove('pressed')};
 el.addEventListener('mousedown',press);el.addEventListener('touchstart',press,{passive:false});
 el.addEventListener('mouseup',release);el.addEventListener('touchend',release);el.addEventListener('mouseleave',release)}
@@ -485,7 +647,7 @@ const press=e=>{e.preventDefault();if(state==='play'&&!mario.dead){if(yoshi.moun
 el.addEventListener('mousedown',press);el.addEventListener('touchstart',press,{passive:false})})();
 document.getElementById('btn-down').addEventListener('mousedown',e=>{e.preventDefault();if(state==='play'&&mario.onGround&&!mario.dead)checkPipeEntry()});
 document.getElementById('btn-down').addEventListener('touchstart',e=>{e.preventDefault();if(state==='play'&&mario.onGround&&!mario.dead)checkPipeEntry()},{passive:false});
-canvas.addEventListener('click',()=>{if(state!=='play'){if(state==='over'||state==='win'){score=0;coins=0;lives=3;mario.big=false;mario.power='none'}startGame()}});
+canvas.addEventListener('click',(ev)=>{if(state==='start'){const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,cx=(ev.clientX-r.left)*sx,cy=(ev.clientY-r.top)*sy;const bw=130,bh=60,gap=20,bx0=(W-(4*bw+3*gap))/2,by=248;for(let i=0;i<4;i++){if(cx>=bx0+i*(bw+gap)&&cx<=bx0+i*(bw+gap)+bw&&cy>=by&&cy<=by+bh){startFromStage(i+1);return;}}return;}if(state!=='play'){if(state==='over'||state==='win'){score=0;coins=0;lives=3;mario.big=false;mario.power='none';startGame()}else if(state==='dead'){restartCurrentLevel()}}});
 
 // === HIT BLOCK ===
 function hitBlock(p){
@@ -493,6 +655,7 @@ if(p.type==='yoshiEgg'&&!p.hit){p.hit=true;p.type='question';sfx('qblock');block
 if(p.type==='hidden'&&!p.hit){p.hit=true;p.type='question';sfx('qblock');blockAnims.push({p,t:0});if(p.has1UP){mushrooms.push({x:p.x+4,y:p.y-TILE,w:24,h:TILE,vx:1.5,vy:0,alive:true,type:'1up'});sfx('1up')}return}
 if(p.type==='question'&&!p.hit){
 if(p.coinBlock&&p.hitsLeft>0){p.hitsLeft--;if(p.hitsLeft<=0)p.hit=true;sfx('coin');blockAnims.push({p,t:0});spawnParticle(p.x+16,p.y,'coin');spawnScorePopup(p.x+16,p.y-8,200,'#FFD700');score+=200;coins++;updateHUD()}
+else if(p.has1UP){p.hit=true;sfx('qblock');blockAnims.push({p,t:0});mushrooms.push({x:p.x+4,y:p.y-TILE,w:24,h:TILE,vx:1.5,vy:0,alive:true,type:'1up'});sfx('1up')}
 else if(p.hasStar){p.hit=true;sfx('power');blockAnims.push({p,t:0});mushrooms.push({x:p.x+4,y:p.y-TILE,w:24,h:24,alive:true,type:'star'})}
 else{p.hit=true;sfx('qblock');blockAnims.push({p,t:0});
 if(p.hasMush){if(mario.power==='none')mushrooms.push({x:p.x+4,y:p.y-TILE,w:24,h:TILE,vx:1.5,vy:0,alive:true,type:'mushroom'});else mushrooms.push({x:p.x+4,y:p.y-TILE,w:24,h:24,alive:true,type:'flower'})}
@@ -500,15 +663,18 @@ else{spawnParticle(p.x+16,p.y,'coin');spawnScorePopup(p.x+16,p.y-8,200,'#FFD700'
 else if(p.type==='brick'){if(mario.big){sfx('break');score+=50;updateHUD();spawnParticle(p.x+16,p.y,'brick');spawnScorePopup(p.x+16,p.y-8,50,'#e67e22');const idx=platforms.indexOf(p);if(idx!==-1)platforms.splice(idx,1)}else{blockAnims.push({p,t:0})}}}
 
 // === GAME MANAGEMENT ===
+function startFromStage(n){yoshi.alive=false;yoshi.mounted=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.runAway=false;currentLevel=n;if(n===1)buildLevel();else if(n===2)buildLevel2();else if(n===3)buildLevel3();else buildLevel4();mario.big=false;mario.power='none';fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;if(timerTick)clearInterval(timerTick);updateHUD();try{AC.resume()}catch(e){}}
 function startGame(){currentLevel=1;buildLevel();mario.big=false;mario.power='none';fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;if(timerTick)clearInterval(timerTick);updateHUD();try{AC.resume()}catch(e){}}
-function killMario(){
-if(starTimer>0||mario.inv>0)return;
-if(yoshi.mounted&&yoshi.alive){dismountYoshi(true);mario.inv=120;return}
-if(mario.power==='fire'){mario.power='big';mario.inv=120;sfx('break');return}
-if(mario.power==='big'){mario.power='none';mario.big=false;mario.h=32;mario.inv=120;sfx('break');return}
+function restartCurrentLevel(){yoshi.alive=false;yoshi.mounted=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.runAway=false;if(currentLevel===1)buildLevel();else if(currentLevel===2)buildLevel2();else if(currentLevel===3)buildLevel3();else buildLevel4();mario.big=false;mario.power='none';fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;if(timerTick)clearInterval(timerTick);updateHUD();try{AC.resume()}catch(e){}}
+function killMario(force=false){
+if(!force&&(starTimer>0||mario.inv>0))return;
+if(!force&&yoshi.mounted&&yoshi.alive){dismountYoshi(true);mario.inv=120;return}
+if(!force&&mario.power==='fire'){mario.power='big';mario.inv=120;sfx('break');return}
+if(!force&&mario.power==='big'){mario.power='none';mario.big=false;mario.h=32;mario.inv=120;sfx('break');return}
+if(yoshi.mounted&&yoshi.alive){yoshi.mounted=false;yoshi.alive=false;}
 lives--;combo=0;sfx('die');stopBGM();mario.dead=true;mario.vy=-11;shakeX=8;shakeY=8;updateHUD();
 setTimeout(()=>{if(lives<=0){state='over';clearInterval(timerTick)}else{if(checkpointReached&&checkpoint){resetMario();mario.x=checkpoint.x;mario.y=checkpoint.y-mario.h;cam=Math.max(0,Math.min(mario.x-W/3,LW-W));state='play';timerTick=setInterval(()=>{if(state==='play'){timeLeft--;if(timeLeft<=0)killMario();updateHUD()}},1000);try{startBGM()}catch(ex){}}else{state='dead';clearInterval(timerTick)}}},2200)}
-function updateHUD(){document.getElementById('hScore').textContent=String(score).padStart(6,'0');document.getElementById('hCoins').textContent='x'+String(coins).padStart(2,'0');document.getElementById('hTime').textContent=timeLeft;document.getElementById('hWorld').textContent=currentWorld+'-'+currentLevel;const li=document.getElementById('lives-icons');li.innerHTML='';for(let i=0;i<Math.max(0,lives);i++){const s=document.createElement('span');s.textContent='🍄';s.style.fontSize='14px';li.appendChild(s)}}
+function updateHUD(){if(coins>=100){coins-=100;lives++;sfx('1up');spawnScorePopup(mario.x+13,mario.y-20,'1UP!','#2ecc71');for(let i=0;i<10;i++)spawnParticle(mario.x+13,mario.y+24,'star')}document.getElementById('hScore').textContent=String(score).padStart(6,'0');document.getElementById('hCoins').textContent='x'+String(coins).padStart(2,'0');document.getElementById('hTime').textContent=timeLeft;document.getElementById('hWorld').textContent=currentWorld+'-'+currentLevel;const li=document.getElementById('lives-icons');li.innerHTML='';for(let i=0;i<Math.max(0,lives);i++){const s=document.createElement('span');s.textContent='🍄';s.style.fontSize='14px';li.appendChild(s)}}
 
 // === UPDATE ===
 function update(){
@@ -517,16 +683,16 @@ if(bgmGain)try{scheduleBGM()}catch(e){bgmGain=null}
 shakeX*=0.8;shakeY*=0.8;if(Math.abs(shakeX)<0.1)shakeX=0;if(Math.abs(shakeY)<0.1)shakeY=0;
 for(let i=blockAnims.length-1;i>=0;i--){const b=blockAnims[i];b.t+=0.2;b.p.bounceOffset=Math.sin(b.t)*8*Math.max(0,1-b.t/Math.PI);if(b.t>Math.PI){b.p.bounceOffset=0;blockAnims.splice(i,1)}}
 if(state==='intro'){introTimer--;updateParticles();if(introTimer<=0){state='play';timerTick=setInterval(()=>{if(state==='play'){timeLeft--;if(timeLeft<=0)killMario();updateHUD()}},1000);try{startBGM()}catch(e2){}}return}
-if(goalSlide){goalSlide.t++;if(goalSlide.phase==='slide'){mario.y+=3;mario.x=flagPole.x-4;if(mario.y>=H-TILE-mario.h){mario.y=H-TILE-mario.h;goalSlide.phase='walk'}}else if(goalSlide.phase==='walk'){mario.x+=2;mario.facing=1;mario.walkTimer++;if(mario.walkTimer>5){mario.walkTimer=0;mario.walkFrame=(mario.walkFrame+1)%3}if(goalSlide.t>120){goalSlide=null;score+=1000+timeLeft*50;clearInterval(timerTick);updateHUD();if(currentLevel===1){currentLevel=2;buildLevel2();fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;try{startBGM()}catch(e){}updateHUD()}else if(currentLevel===2){currentLevel=3;buildLevel3();fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;try{startBGM()}catch(e){}updateHUD()}else{state='win';for(let i=0;i<30;i++)setTimeout(()=>spawnParticle(flagPole.x,H-TILE-150+Math.random()*100,'star'),i*60)}}}updateParticles();return}
+if(goalSlide){goalSlide.t++;if(goalSlide.phase==='slide'){mario.y+=3;mario.x=flagPole.x-4;if(mario.y>=H-TILE-mario.h){mario.y=H-TILE-mario.h;goalSlide.phase='walk'}}else if(goalSlide.phase==='walk'){mario.x+=2;mario.facing=1;mario.walkTimer++;if(mario.walkTimer>5){mario.walkTimer=0;mario.walkFrame=(mario.walkFrame+1)%3}if(goalSlide.t>120){goalSlide=null;score+=1000+timeLeft*50;clearInterval(timerTick);updateHUD();if(currentLevel===1){currentLevel=2;buildLevel2();fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;try{startBGM()}catch(e){}updateHUD()}else if(currentLevel===2){currentLevel=3;buildLevel3();fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;try{startBGM()}catch(e){}updateHUD()}else if(currentLevel===3){currentLevel=4;buildLevel4();fireballs.length=0;resetMario();timeLeft=400;state='intro';introTimer=120;try{startBGM()}catch(e){}updateHUD()}else{state='win';for(let i=0;i<30;i++)setTimeout(()=>spawnParticle(mario.x,H-TILE-100+Math.random()*80,'star'),i*60)}}}updateParticles();return}
 // Moving platforms
 for(const mp of movingPlats){if(mp.type==='h')mp.x=mp.ox+Math.sin(frame*0.015*mp.spd)*mp.range;else if(mp.type==='v')mp.y=mp.oy+Math.sin(frame*0.015*mp.spd)*mp.range;else if(mp.type==='fall'){if(mp.falling){mp.vy+=0.3;mp.y+=mp.vy;if(mp.y>H+100){mp.y=mp.oy;mp.vy=0;mp.falling=false;mp.fallTimer=0}}}}
-if(starTimer>0){starTimer--;if(frame%3===0)spawnParticle(mario.x+13,mario.y+mario.h/2,'star');if(starTimer<=0)mario.inv=0}
+if(starTimer>0){starTimer--;if(frame%3===0)spawnParticle(mario.x+13,mario.y+mario.h/2,'star');if(starTimer<=0){mario.inv=0;stopBGM();try{startBGM()}catch(e){}}}
 if(comboTimer>0){comboTimer--;if(comboTimer<=0)combo=0}
 // Bullet Bill Cannons
 for(const cn of cannons){cn.timer--;if(cn.timer<=0){cn.timer=cn.fireRate;if(Math.abs(mario.x-cn.x)<600){const dir=mario.x>cn.x?1:-1;bulletBills.push({x:cn.x+(dir>0?cn.w:-20),y:cn.y+4,w:20,h:16,vx:dir*4,alive:true});try{beep(80,.15,'sawtooth',.15);beep(60,.2,'sawtooth',.1,.1)}catch(ex){}}}}
 // Bullet Bills
 for(let i=bulletBills.length-1;i>=0;i--){const bb=bulletBills[i];if(!bb.alive){bulletBills.splice(i,1);continue}bb.x+=bb.vx;if(bb.x<cam-100||bb.x>cam+W+100){bulletBills.splice(i,1);continue}
-if(mario.inv===0&&!mario.dead&&overlap(mario.x,mario.y,mario.w,mario.h,bb.x,bb.y,bb.w,bb.h)){if(starTimer>0){bb.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(bb.x+10,bb.y+8,'star')}else if(mario.y+mario.h-mario.vy<=bb.y+4){bb.alive=false;mario.vy=-9;score+=200;sfx('stomp');updateHUD();spawnParticle(bb.x+10,bb.y+8,'dust');spawnScorePopup(bb.x+10,bb.y-8,200,'#e74c3c')}else killMario()}
+if((mario.inv===0||starTimer>0)&&!mario.dead&&overlap(mario.x,mario.y,mario.w,mario.h,bb.x,bb.y,bb.w,bb.h)){if(starTimer>0){bb.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(bb.x+10,bb.y+8,'star')}else if(mario.y+mario.h-mario.vy<=bb.y+4){bb.alive=false;mario.vy=-9;score+=200;sfx('stomp');updateHUD();spawnParticle(bb.x+10,bb.y+8,'dust');spawnScorePopup(bb.x+10,bb.y-8,200,'#e74c3c')}else killMario()}
 for(const fb of fireballs){if(!fb.alive)continue;if(overlap(fb.x,fb.y,fb.w,fb.h,bb.x,bb.y,bb.w,bb.h)){bb.alive=false;fb.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(bb.x+10,bb.y+8,'star')}}}
 // Hammer Bros AI
 for(const e of enemies){if(!e.alive||e.type!=='hammerBro'||e.state==='dead')continue;
@@ -559,7 +725,7 @@ for(const mp of movingPlats){if(mp.falling&&mp.y>H)continue;if(overlap(mario.x+1
 // Springs
 for(const sp of springs){if(sp.compressed>0){sp.compressed--;continue}if(overlap(mario.x,mario.y,mario.w,mario.h,sp.x,sp.y,sp.w,sp.h)){if(mario.y+mario.h-mario.vy<=sp.y+4){mario.vy=-20;mario.onGround=false;sp.compressed=15;sfx('jump');for(let i=0;i<6;i++)spawnParticle(sp.x+12,sp.y,'star')}}}
 if(Math.abs(mario.vx)>0.5&&mario.onGround){mario.walkTimer++;if(mario.walkTimer>5){mario.walkTimer=0;mario.walkFrame=(mario.walkFrame+1)%3}}else if(mario.onGround)mario.walkFrame=0;
-if(mario.y>H+120)killMario();
+if(mario.y>H+40)killMario(true);
 if(mario.inv>0)mario.inv--;
 
 // === YOSHI UPDATE ===
@@ -567,21 +733,22 @@ if(mario.inv>0)mario.inv--;
 for(let i=yoshiItems.length-1;i>=0;i--){const yi=yoshiItems[i];
 if(!yi.onGround){yi.vy+=GRAVITY;yi.y+=yi.vy;if(yi.y>=H-TILE-yi.h){yi.y=H-TILE-yi.h;yi.vy=0;yi.onGround=true}}
 if(yi.onGround){yi.hatchTimer--;if(yi.hatchTimer<=0&&!yi.hatched){yi.hatched=true;
-yoshi.x=yi.x;yoshi.y=yi.y-yoshi.h+yi.h;yoshi.alive=true;yoshi.mounted=false;yoshi.runAway=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.facing=1;yoshi.vx=0;yoshi.vy=0;
+yoshi.x=yi.x;yoshi.y=yi.y-yoshi.h+yi.h;yoshi.alive=true;yoshi.mounted=false;yoshi.runAway=false;yoshi.eatCount=0;yoshi.eggsReady=0;yoshi.facing=1;yoshi.vx=0;yoshi.vy=0;yoshi.idleTimer=0;
 sfx('power');for(let j=0;j<15;j++)spawnParticle(yi.x+12,yi.y,'star');yoshiItems.splice(i,1)}}}
 // Yoshi free-roaming / run away
 if(yoshi.alive&&!yoshi.mounted){
 if(yoshi.runAway){yoshi.runTimer--;yoshi.x+=yoshi.vx;yoshi.vy+=GRAVITY;yoshi.y+=yoshi.vy;yoshi.onGround=false;
 for(const p of platforms){if(Math.abs((p.x+16)-yoshi.x)>260)continue;cY(yoshi,p,null)}
-if(yoshi.runTimer<=0||yoshi.y>H+100)yoshi.alive=false}
+if(yoshi.y>H+100){yoshi.alive=false;}else if(yoshi.runTimer<=0){yoshi.runAway=false;yoshi.vx=0;yoshi.vy=0;yoshi.idleTimer=480;}}
 else{// Idle yoshi, Mario can mount
-if(overlap(mario.x,mario.y,mario.w,mario.h,yoshi.x,yoshi.y,yoshi.w,yoshi.h)){mountYoshi()}}}
+if(yoshi.idleTimer>0){yoshi.idleTimer--;if(yoshi.idleTimer<=0){yoshi.alive=false;}}
+if(yoshi.alive&&overlap(mario.x,mario.y,mario.w,mario.h,yoshi.x,yoshi.y,yoshi.w,yoshi.h)){mountYoshi();yoshi.idleTimer=0;}}}
 // Yoshi mounted - follow Mario
 if(yoshi.alive&&yoshi.mounted){yoshi.x=mario.x-2;yoshi.y=mario.y+mario.h-yoshi.h+8;yoshi.facing=mario.facing;
 // Tongue
 if(yoshi.tongueOut>0){yoshi.tongueOut--;yoshi.tongueLen=Math.min(yoshi.tongueLen+8,yoshi.tongueMaxLen);
 const tx=yoshi.x+(yoshi.facing===1?yoshi.w:0)+yoshi.facing*yoshi.tongueLen;const ty=yoshi.y+15;
-for(const e of enemies){if(!e.alive||e.state==='dead')continue;if(overlap(tx-8,ty-8,16,16,e.x,e.y,e.w,e.h)){e.state='dead';e.squishT=1;e.alive=false;sfx('yoshi_eat');score+=200;yoshi.eatCount++;if(yoshi.eatCount>=5){yoshi.eatCount=0;yoshi.eggsReady++;spawnScorePopup(mario.x,mario.y-30,'EGG!','#2ecc71')}updateHUD();spawnParticle(e.x+16,e.y+16,'star');spawnScorePopup(e.x+8,e.y-8,200,'#27ae60');break}}}}
+for(const e of enemies){if(!e.alive||e.state==='dead')continue;if(overlap(tx-10,ty-90,20,110,e.x,e.y,e.w,e.h)){e.state='dead';e.squishT=1;e.alive=false;sfx('yoshi_eat');score+=200;yoshi.eatCount++;if(yoshi.eatCount>=10){yoshi.eatCount=0;starTimer=600;mario.inv=600;spawnScorePopup(mario.x,mario.y-30,'★STAR!','#FFD700');for(let i=0;i<20;i++)spawnParticle(mario.x+13,mario.y+24,'star');sfx('power');stopBGM();try{startBGM()}catch(ex){}}updateHUD();spawnParticle(e.x+16,e.y+16,'star');spawnScorePopup(e.x+8,e.y-8,200,'#27ae60');break}}}}
 // Yoshi thrown eggs
 for(let i=yoshiEggs.length-1;i>=0;i--){const eg=yoshiEggs[i];if(!eg.alive){yoshiEggs.splice(i,1);continue}
 eg.vy+=0.4;eg.x+=eg.vx;eg.y+=eg.vy;
@@ -596,7 +763,7 @@ if(overlap(mario.x,mario.y,mario.w,mario.h,c.x,c.y,TILE,TILE)){c.collected=true;
 for(const m of mushrooms){if(!m.alive)continue;
 if(m.type==='flower'||m.type==='star'){if(m.type==='star')m.bobY=(m.bobY||0)+0.1;
 if(overlap(mario.x,mario.y,mario.w,mario.h,m.x,m.y+(m.type==='star'?Math.sin(m.bobY||0)*4:0),m.w,m.h)){m.alive=false;
-if(m.type==='star'){starTimer=480;mario.inv=480;sfx('power');score+=1000;updateHUD();spawnScorePopup(mario.x+13,mario.y-10,'STAR!','#FFD700');for(let i=0;i<20;i++)spawnParticle(mario.x+13,mario.y+24,'star')}
+if(m.type==='star'){starTimer=480;mario.inv=60;sfx('power');score+=1000;updateHUD();spawnScorePopup(mario.x+13,mario.y-10,'STAR!','#FFD700');for(let i=0;i<20;i++)spawnParticle(mario.x+13,mario.y+24,'star');stopBGM();try{startBGM()}catch(ex){}}
 else{upgradeMario('flower');score+=1000;updateHUD();spawnScorePopup(mario.x+13,mario.y-10,'1000','#FF6B6B')}}continue}
 m.x+=m.vx;for(const p of[...platforms,...pipes]){if(Math.abs((p.x+p.w/2)-m.x)>220)continue;cX(m,p)}
 m.vy+=GRAVITY;m.y+=m.vy;m.onGround=false;for(const p of[...platforms,...pipes]){if(Math.abs((p.x+p.w/2)-m.x)>220)continue;cY(m,p,null)}
@@ -606,15 +773,15 @@ if(m.type==='1up'){lives++;sfx('1up');updateHUD();spawnScorePopup(mario.x+13,mar
 else{upgradeMario('mushroom');score+=1000;updateHUD();spawnScorePopup(mario.x+13,mario.y-10,'1000','#2ecc71')}}}
 // Enemies
 for(const e of enemies){if(!e.alive)continue;if(e.state==='dead'){e.squishT--;if(e.squishT<=0)e.alive=false;continue}
-if(e.type==='parakoopa'&&e.flying){e.x+=e.vx;if(e.x+e.w<-100){e.alive=false;continue}e.y=e.baseY+Math.sin(frame*0.05+(e.phase||0))*22;if(mario.inv===0&&overlap(mario.x,mario.y,mario.w,mario.h,e.x,e.y,e.w,e.h)){if(starTimer>0){e.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(e.x+16,e.y,'star');spawnScorePopup(e.x+8,e.y-8,200,'#FFD700');continue}if(mario.y+mario.h-mario.vy<=e.y+8){e.flying=false;e.type='koopa';e.state='shell';e.vx=0;e.h=TILE*0.7;e.shellTimer=300;mario.vy=-9;sfx('stomp');combo++;comboTimer=60;score+=200;updateHUD();spawnParticle(e.x+16,e.y,'dust');spawnScorePopup(e.x+8,e.y-8,200,'#e74c3c')}else killMario()}continue}
+if(e.type==='parakoopa'&&e.flying){e.x+=e.vx;if(e.x+e.w<-100){e.alive=false;continue}e.y=e.baseY+Math.sin(frame*0.05+(e.phase||0))*22;if((mario.inv===0||starTimer>0)&&overlap(mario.x,mario.y,mario.w,mario.h,e.x,e.y,e.w,e.h)){if(starTimer>0){e.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(e.x+16,e.y,'star');spawnScorePopup(e.x+8,e.y-8,200,'#FFD700');continue}if(mario.y+mario.h-mario.vy<=e.y+e.h*0.4){e.flying=false;e.type='koopa';e.state='shell';e.vx=0;e.h=TILE*0.7;e.shellTimer=300;mario.vy=-9;sfx('stomp');combo++;comboTimer=60;score+=200;updateHUD();spawnParticle(e.x+16,e.y,'dust');spawnScorePopup(e.x+8,e.y-8,200,'#e74c3c')}else killMario()}continue}
 e.x+=e.vx;for(const p of[...platforms,...pipes]){if(Math.abs((p.x+p.w/2)-e.x)>220)continue;cX(e,p)}
 e.vy+=GRAVITY;e.y+=e.vy;e.onGround=false;for(const p of[...platforms,...pipes]){if(Math.abs((p.x+p.w/2)-e.x)>220)continue;cY(e,p,null)}
 if(e.y>H+100){e.alive=false;continue}
 if(e.onGround&&e.state==='walk'){e.walkTimer++;if(e.walkTimer>8){e.walkTimer=0;e.walkFrame=(e.walkFrame+1)%2}}
 if(e.state==='shell'&&Math.abs(e.vx)>1){for(const o of enemies){if(o===e||!o.alive||o.state==='dead')continue;if(overlap(e.x,e.y,e.w,e.h,o.x,o.y,o.w,o.h)){o.state='dead';o.squishT=20;score+=200;sfx('stomp');updateHUD();spawnScorePopup(o.x+8,o.y-8,200,'#e74c3c')}}}
-if(mario.inv===0&&overlap(mario.x,mario.y,mario.w,mario.h,e.x,e.y,e.w,e.h)){
+if((mario.inv===0||starTimer>0)&&overlap(mario.x,mario.y,mario.w,mario.h,e.x,e.y,e.w,e.h)){
 if(starTimer>0){e.state='dead';e.squishT=20;score+=200;sfx('stomp');updateHUD();spawnParticle(e.x+16,e.y+16,'star');spawnScorePopup(e.x+8,e.y-8,200,'#FFD700');continue}
-const mBot=mario.y+mario.h;if(mBot-mario.vy<=e.y+6){combo++;comboTimer=60;const cs=combo<=1?200:combo===2?400:combo===3?800:combo===4?1600:0;if(combo>=5){lives++;sfx('1up');spawnScorePopup(e.x+8,e.y-8,'1UP!','#2ecc71')}else{score+=cs;spawnScorePopup(e.x+8,e.y-8,cs,'#e74c3c')}
+const mBot=mario.y+mario.h;if(mBot-mario.vy<=e.y+e.h*0.4){combo++;comboTimer=60;const cs=combo<=1?200:combo===2?400:combo===3?800:combo===4?1600:0;if(combo>=5){lives++;sfx('1up');spawnScorePopup(e.x+8,e.y-8,'1UP!','#2ecc71')}else{score+=cs;spawnScorePopup(e.x+8,e.y-8,cs,'#e74c3c')}
 mario.vy=-9;sfx('stomp');updateHUD();spawnParticle(e.x+16,e.y+16,'dust');
 if(e.type==='goomba'||e.type==='hammerBro'){e.state='dead';e.squishT=28}
 else if(e.type==='koopa'||e.type==='buzzy'){if(e.state==='walk'){e.state='shell';e.vx=0;e.h=TILE*0.7;e.shellTimer=300}else if(e.state==='shell'&&Math.abs(e.vx)<0.5)e.vx=mario.facing*8;else{e.vx=0;e.shellTimer=300}}}
@@ -622,11 +789,57 @@ else if(e.state==='shell'&&Math.abs(e.vx)<0.5){e.vx=mario.facing*8;sfx('stomp');
 if(e.state==='shell'){e.shellTimer--;if(e.shellTimer<=0){e.state='walk';e.vx=e.type==='buzzy'?-1.6:-1.3;e.h=e.type==='koopa'?TILE*1.2:e.type==='buzzy'?TILE*0.85:TILE}}}
 // Piranhas
 for(const pr of piranhas){if(!pr.alive)continue;const t=frame*0.03+pr.phase;pr.y=pr.baseY-Math.max(0,Math.sin(t))*pr.maxUp;
-if(mario.inv===0&&overlap(mario.x,mario.y,mario.w,mario.h,pr.x,pr.y,pr.w,pr.h))killMario();
+if(overlap(mario.x,mario.y,mario.w,mario.h,pr.x,pr.y,pr.w,pr.h)){if(starTimer>0){pr.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(pr.x+8,pr.y,'star');spawnScorePopup(pr.x+8,pr.y-8,200,'#FFD700')}else if(mario.inv===0)killMario();}
 for(const fb of fireballs){if(!fb.alive)continue;if(overlap(fb.x,fb.y,fb.w,fb.h,pr.x,pr.y,pr.w,pr.h)){pr.alive=false;fb.alive=false;score+=200;sfx('stomp');updateHUD();spawnParticle(pr.x+8,pr.y,'star');spawnScorePopup(pr.x+8,pr.y-8,200,'#27ae60')}}}
+// Bowser boss
+if(bowser.alive){
+if(bowser.state!=='dead'){
+if(bowser.hurtTimer>0)bowser.hurtTimer--;
+bowser.vy+=GRAVITY;bowser.x+=bowser.vx;bowser.y+=bowser.vy;
+bowser.onGround=false;
+for(const p of platforms){const py=p.y-(p.bounceOffset||0);if(overlap(bowser.x,bowser.y,bowser.w,bowser.h,p.x,py,p.w,p.h)&&bowser.vy>=0&&bowser.y+bowser.h/2<py+p.h/2){bowser.y=py-bowser.h;bowser.vy=0;bowser.onGround=true;break}}
+if(bowser.y>H+50){bowser.y=H-TILE-bowser.h;bowser.vy=0;bowser.onGround=true}
+if(bowser.x<6700){bowser.x=6700;bowser.vx=Math.abs(bowser.vx)}
+if(bowser.x+bowser.w>7750){bowser.x=7750-bowser.w;bowser.vx=-Math.abs(bowser.vx)}
+bowser.facing=bowser.vx>=0?1:-1;
+bowser.jumpTimer--;if(bowser.jumpTimer<=0&&bowser.onGround){bowser.vy=-12;bowser.onGround=false;bowser.jumpTimer=200+Math.floor(Math.random()*80)}
+bowser.fireTimer--;if(bowser.fireTimer<=0){bowser.fireTimer=90+Math.floor(Math.random()*50);const dir=mario.x<bowser.x+bowser.w/2?-1:1;const bfx=bowser.x+(dir>0?bowser.w:0),bfy=bowser.y+24;for(let bi=0;bi<3;bi++){bowserFire.push({x:bfx,y:bfy,w:18,h:18,vx:dir*(5.5+bi*0.4),vy:-3.5,bounces:0,alive:true,delay:bi*8,armed:bi===0});}try{beep(180,.12,'sawtooth',.18);beep(140,.1,'sawtooth',.12,.06);}catch(ex){}}
+if(mario.inv===0&&starTimer===0&&overlap(mario.x,mario.y,mario.w,mario.h,bowser.x,bowser.y,bowser.w,bowser.h)){
+const mBot=mario.y+mario.h;
+if(mBot-mario.vy<=bowser.y+bowser.h*0.35&&bowser.hurtTimer===0){bowser.hurtTimer=70;bowser.hp--;mario.vy=-11;sfx('stomp');spawnScorePopup(bowser.x+32,bowser.y-8,500,'#e74c3c');if(bowser.hp<=0){bowser.state='dead';bowser.deadTimer=160;stopBGM();score+=5000;updateHUD();for(let pi=0;pi<20;pi++)spawnParticle(bowser.x+Math.random()*64,bowser.y+Math.random()*72,'star')}}
+else killMario()}
+for(let i=fireballs.length-1;i>=0;i--){const fb=fireballs[i];if(!fb.alive)continue;if(bowser.hurtTimer===0&&overlap(fb.x,fb.y,fb.w,fb.h,bowser.x,bowser.y,bowser.w,bowser.h)){fb.alive=false;bowser.hurtTimer=70;bowser.hp--;sfx('stomp');spawnScorePopup(bowser.x+32,bowser.y-8,500,'#ff9944');spawnParticle(bowser.x+32,bowser.y+20,'star');if(bowser.hp<=0){bowser.state='dead';bowser.deadTimer=160;stopBGM();score+=5000;updateHUD();for(let pi=0;pi<20;pi++)spawnParticle(bowser.x+Math.random()*64,bowser.y+Math.random()*72,'star')}}}
+}else{
+bowser.deadTimer--;if(frame%4===0)spawnParticle(bowser.x+Math.random()*64,bowser.y+Math.random()*72,'star');
+if(bowser.deadTimer<=0){bowser.alive=false;peach.alive=true;peach.x=bowser.x+bowser.w+40;peach.y=H-TILE-peach.h;peach.vx=3.5;peach.caught=false;peach.walkFrame=0;peach.walkTimer=0;peachChase={t:0};}
+}
+}
+// Bowser fire projectiles
+for(let i=bowserFire.length-1;i>=0;i--){const bf=bowserFire[i];if(!bf.alive){bowserFire.splice(i,1);continue}
+if(bf.delay>0){bf.delay--;continue}if(!bf.armed){bf.armed=true;}
+bf.vy+=0.45;bf.x+=bf.vx;bf.y+=bf.vy;
+let hit=false;for(const p of platforms){const py=p.y-(p.bounceOffset||0);if(!overlap(bf.x,bf.y,bf.w,bf.h,p.x,py,p.w,p.h))continue;if(bf.y+bf.h/2<py+p.h/2&&bf.vy>0){bf.y=py-bf.h;bf.vy=-(Math.abs(bf.vy)*0.72+1.5);bf.bounces++;if(bf.vy<-9)bf.vy=-9;}else{bf.alive=false;}hit=true;break;}
+if(bf.bounces>6||bf.y>H+40||bf.x<-200||bf.x>LW+200)bf.alive=false;
+if(mario.inv===0&&bf.armed&&overlap(bf.x,bf.y,bf.w,bf.h,mario.x,mario.y,mario.w,mario.h)){if(starTimer>0){bf.alive=false}else killMario()}}
+// Peach chase
+if(peachChase&&peach.alive){
+peachChase.t++;
+if(!peach.caught){
+peach.x+=peach.vx;peach.walkTimer++;if(peach.walkTimer>7){peach.walkTimer=0;peach.walkFrame=(peach.walkFrame+1)%2;}
+mario.vx=3;mario.x+=3;mario.facing=1;mario.walkTimer++;if(mario.walkTimer>5){mario.walkTimer=0;mario.walkFrame=(mario.walkFrame+1)%3;}
+cam=Math.max(0,Math.min(mario.x-W/3,LW-W));
+if(mario.x+mario.w>=peach.x){peach.caught=true;peach.vx=0;peachChase.catchT=0;sfx('power');for(let pi=0;pi<20;pi++)spawnParticle(peach.x+15,peach.y+20,'star');}
+}else{
+peachChase.catchT++;
+if(peachChase.catchT===1){score+=10000;updateHUD();}
+if(peachChase.catchT>120){peachChase=null;peach.alive=false;state='win';for(let wi=0;wi<30;wi++)setTimeout(()=>spawnParticle(mario.x+Math.random()*200-100,H-TILE-100+Math.random()*80,'star'),wi*60);}
+}
+}
+// Lava flames
+for(const f of lavaFlames){f.phase++;const cyc=f.phase%f.period,rise=Math.floor(f.period*0.28),stay=Math.floor(f.period*0.18);if(cyc<rise){f.curH=Math.min(f.maxH,(cyc/rise)*f.maxH*1.1)}else if(cyc<rise+stay){f.curH=f.maxH}else{f.curH=Math.max(0,f.curH-f.maxH/(rise*0.7))}if(f.curH>12){const ft=H-TILE-f.curH;if(mario.inv===0&&starTimer===0&&mario.x+mario.w>f.x-2&&mario.x<f.x+f.w+2&&mario.y+mario.h>ft&&mario.y<H-TILE)killMario()}}
 if(ugMode&&mario.x>W-1.5*TILE&&mario.onGround)exitUnderground();
 if(checkpoint&&!checkpointReached&&mario.x>checkpoint.x){checkpointReached=true;sfx('flag');spawnScorePopup(checkpoint.x,checkpoint.y-TILE*3,'CHECK!','#2ecc71');for(let i=0;i<10;i++)spawnParticle(checkpoint.x+8,checkpoint.y-TILE*2,'star')}
-if(!ugMode&&!mario.dead&&mario.x+mario.w>=flagPole.x&&mario.x<=flagPole.x+20){sfx('flag');stopBGM();goalSlide={phase:'slide',t:0};mario.vx=0;mario.vy=0}
+if(currentLevel!==4&&!ugMode&&!mario.dead&&mario.x+mario.w>=flagPole.x&&mario.x<=flagPole.x+20){sfx('flag');stopBGM();goalSlide={phase:'slide',t:0};mario.vx=0;mario.vy=0}
 // Fireballs
 for(let i=fireballs.length-1;i>=0;i--){const fb=fireballs[i];if(!fb.alive){fireballs.splice(i,1);continue}
 fb.vy+=0.55;fb.x+=fb.vx;fb.y+=fb.vy;
@@ -651,6 +864,13 @@ ctx.fillStyle='#ffe050';ctx.beginPath();ctx.arc(W*0.72-cam*0.02,H*0.68,36,0,Math
 ctx.fillStyle='#2a1500';[400,1100,2200,3600,5100,6600].forEach(mx=>{const dx=mx-cam*0.25;if(dx<-300||dx>W+300)return;ctx.beginPath();ctx.moveTo(dx-20,H-TILE);ctx.quadraticCurveTo(dx+90,H-TILE-85,dx+200,H-TILE);ctx.fill();});
 ctx.fillStyle='#1a0e00';[200,700,1500,2400,3300,4200,5100,6000].forEach((bx,i)=>{const dx=bx-cam*0.3;if(dx<-100||dx>W+100)return;const bw=44+(i%3)*20;ctx.beginPath();ctx.arc(dx,H-TILE+2,bw/3,Math.PI,0);ctx.fill();ctx.beginPath();ctx.arc(dx-bw/4,H-TILE+2,bw/4,Math.PI,0);ctx.fill();ctx.beginPath();ctx.arc(dx+bw/4,H-TILE+2,bw/4,Math.PI,0);ctx.fill();});
 [100,500,900,1400,2100,2900,3700,4600,5500,6400].forEach((cx,i)=>{const dx=cx-cam*0.35;if(dx<-140||dx>W+140)return;const cy=35+(i%3)*28;ctx.fillStyle='rgba(255,150,50,0.65)';ctx.beginPath();ctx.arc(dx+30,cy+20,20,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(dx+55,cy+14,26,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(dx+80,cy+20,20,0,Math.PI*2);ctx.fill();ctx.fillRect(dx+12,cy+20,76,16);});
+return;}
+// Castle (1-4)
+if(currentLevel===4){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0a0000');g.addColorStop(0.5,'#200505');g.addColorStop(1,'#3a0a0a');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ctx.fillStyle='rgba(255,50,0,0.08)';ctx.fillRect(0,H-TILE*3,W,TILE*3);
+const cx=cam*0.15;ctx.fillStyle='rgba(60,20,20,0.45)';
+for(let bx=0;bx<W+64;bx+=64){const ox=(bx-cx%64);for(let by=0;by<H-TILE*3;by+=32){if((Math.floor((bx+cam*0.15)/64)+Math.floor(by/32))%2===0)ctx.fillRect(ox-32,by,62,30)}}
+ctx.fillStyle='#ff3300';ctx.globalAlpha=0.12+0.06*Math.abs(Math.sin(frame*0.03));ctx.fillRect(0,H-TILE*1.5,W,TILE*2);ctx.globalAlpha=1;
 return;}
 // Night sky (1-3)
 if(currentLevel===3){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#000510');g.addColorStop(0.5,'#080f28');g.addColorStop(1,'#101520');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
@@ -978,6 +1198,16 @@ function draw(){
 const sx=shakeX*(Math.random()*2-1),sy=shakeY*(Math.random()*2-1);ctx.save();ctx.translate(sx,sy);
 if(state==='intro'){ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';ctx.font='bold 24px "Press Start 2P",monospace';ctx.textAlign='center';ctx.fillText(`WORLD  ${currentWorld}-${currentLevel}`,W/2,H/2-30);ctx.font='14px "Press Start 2P",monospace';ctx.fillText(`x ${lives}`,W/2+30,H/2+20);ctx.fillStyle='#E52521';ctx.fillRect(W/2-20,H/2+6,16,10);ctx.fillStyle='#FBD000';ctx.fillRect(W/2-18,H/2+16,12,6);ctx.textAlign='left';ctx.restore();return}
 drawBG();ctx.save();ctx.translate(-cam,0);
+// Lava flames (draw below blocks)
+for(const f of lavaFlames){if(f.curH<2||f.x+f.w<cam-10||f.x>cam+W+10)continue;
+const ft=H-TILE-f.curH;
+const g=ctx.createLinearGradient(f.x,ft,f.x,H-TILE);
+g.addColorStop(0,'rgba(255,255,100,0.95)');g.addColorStop(0.25,'rgba(255,160,0,1)');g.addColorStop(0.7,'rgba(255,50,0,1)');g.addColorStop(1,'rgba(200,0,0,1)');
+ctx.fillStyle=g;ctx.fillRect(f.x,ft,f.w,f.curH);
+if(f.curH>30){ctx.fillStyle='rgba(255,255,200,0.55)';ctx.fillRect(f.x+f.w*0.3,ft,f.w*0.4,f.curH*0.35);}
+// Flicker tip
+if(f.curH>0){const fl=Math.random()*6;ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillRect(f.x+f.w*0.2,ft-fl,f.w*0.6,fl+3);}
+}
 // Blocks
 for(const p of platforms){if((p.type==='hidden'&&!p.hit)||p.x+p.w<cam-10||p.x>cam+W+10)continue;drawTile(p.x,p.y,p.type,p.hit,p.bounceOffset||0)}
 for(const mp of movingPlats)if(!(mp.falling&&mp.y>H))drawMovingPlat(mp);
@@ -1006,7 +1236,91 @@ for(const c of coinItems){if(c.collected)continue;if(c.pop){drawCoinItem(c.x,c.p
 for(const e of enemies){if(!e.alive||e.x+e.w<cam-10||e.x>cam+W+10)continue;
 if(e.type==='koopa'||e.type==='parakoopa')drawKoopa(e);else if(e.type==='buzzy')drawBuzzy(e);else if(e.type==='hammerBro')drawHammerBro(e);
 else drawGoomba(e.x,e.y,e.state==='dead',e.walkFrame)}
-if(!ugMode&&flagPole.x-cam>-200&&flagPole.x-cam<W+200)drawFlag();
+if(currentLevel!==4&&!ugMode&&flagPole.x-cam>-200&&flagPole.x-cam<W+200)drawFlag();
+// Bowser
+if(bowser.alive&&bowser.x+bowser.w>cam-10&&bowser.x<cam+W+10){
+const bx=Math.round(bowser.x),by=Math.round(bowser.y);
+const flash=bowser.hurtTimer>0&&bowser.hurtTimer%6<3;
+if(bowser.state==='dead')ctx.globalAlpha=Math.max(0,bowser.deadTimer/160);
+if(flash)ctx.globalAlpha=0.35;
+// Shell spikes
+ctx.fillStyle='#8fbc8f';
+for(let s=0;s<3;s++){ctx.beginPath();ctx.moveTo(bx+14+s*14,by+18);ctx.lineTo(bx+20+s*14,by+4);ctx.lineTo(bx+26+s*14,by+18);ctx.fill()}
+// Back/shell
+ctx.fillStyle='#1e5c1e';ctx.fillRect(bx+8,by+18,48,42);
+// Belly
+ctx.fillStyle='#3a8a3a';ctx.fillRect(bx+14,by+32,36,24);
+// Head
+ctx.fillStyle='#c8a050';ctx.fillRect(bx+10,by,44,26);
+// Crown
+ctx.fillStyle='#FFD700';
+ctx.beginPath();ctx.moveTo(bx+12,by);ctx.lineTo(bx+17,by-11);ctx.lineTo(bx+22,by);ctx.fill();
+ctx.beginPath();ctx.moveTo(bx+28,by);ctx.lineTo(bx+33,by-16);ctx.lineTo(bx+38,by);ctx.fill();
+ctx.beginPath();ctx.moveTo(bx+42,by);ctx.lineTo(bx+47,by-11);ctx.lineTo(bx+52,by);ctx.fill();
+// Eyes (face direction)
+const ex=bowser.facing>0?bx+18:bx+30;
+ctx.fillStyle='#cc1100';ctx.fillRect(ex,by+6,12,9);ctx.fillStyle='#000';ctx.fillRect(ex+2,by+8,8,6);ctx.fillStyle='#fff';ctx.fillRect(ex+5,by+8,3,3);
+// Nose
+ctx.fillStyle='#a06820';ctx.fillRect(bx+18,by+17,28,6);ctx.fillStyle='#000';ctx.fillRect(bx+21,by+18,5,4);ctx.fillRect(bx+38,by+18,5,4);
+// Arms
+ctx.fillStyle='#3a8a3a';
+ctx.fillRect(bx+(bowser.facing>0?-6:60),by+28,16,20);
+ctx.fillRect(bx+(bowser.facing>0?54:2),by+30,16,16);
+// Legs with walk animation
+ctx.fillStyle='#1e5c1e';
+const lf=bowser.onGround?(frame%18<9?-2:2):0;
+ctx.fillRect(bx+12,by+56,18,16+lf);ctx.fillRect(bx+34,by+56,18,16-lf);
+// Claws
+ctx.fillStyle='#ddd';
+ctx.fillRect(bx+10,by+71,8,6);ctx.fillRect(bx+19,by+71,6,5);
+ctx.fillRect(bx+34,by+71,6,5);ctx.fillRect(bx+43,by+71,8,6);
+ctx.globalAlpha=1;
+// HP bar
+if(bowser.state!=='dead'){
+const hpW=80,hpX=bx+(bowser.w-hpW)/2,hpY=by-22;
+ctx.fillStyle='#333';ctx.fillRect(hpX-1,hpY-1,hpW+2,12);
+ctx.fillStyle='#e74c3c';ctx.fillRect(hpX,hpY,Math.max(0,hpW*(bowser.hp/bowser.maxHp)),10);
+ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.strokeRect(hpX-1,hpY-1,hpW+2,12);
+ctx.fillStyle='#fff';ctx.font='6px "Press Start 2P"';ctx.textAlign='center';ctx.fillText('BOWSER',bx+bowser.w/2,hpY-5);ctx.textAlign='left';}
+}
+// Bowser fire
+for(const bf of bowserFire){if(!bf.alive||bf.delay>0||bf.x+bf.w<cam-10||bf.x>cam+W+10)continue;const bfx=Math.round(bf.x),bfy=Math.round(bf.y),r=9;ctx.fillStyle='#ff2200';ctx.beginPath();ctx.arc(bfx+r,bfy+r,r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ff8800';ctx.beginPath();ctx.arc(bfx+r,bfy+r,6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffee44';ctx.beginPath();ctx.arc(bfx+r,bfy+r,3,0,Math.PI*2);ctx.fill();}
+// Princess Peach
+if(peach.alive&&peach.x+peach.w>cam-10&&peach.x<cam+W+10){
+const px=Math.round(peach.x),py=Math.round(peach.y);
+const wo=peach.caught?0:(peach.walkFrame===0?-2:2);
+// Dress (pink)
+ctx.fillStyle='#f48fb1';ctx.fillRect(px+2,py+22,26,30);
+ctx.fillStyle='#f06292';ctx.fillRect(px+4,py+38,22,14);
+// White apron
+ctx.fillStyle='#fff';ctx.fillRect(px+8,py+26,14,20);
+// Body
+ctx.fillStyle='#ffcc99';ctx.fillRect(px+8,py+14,14,14);
+// Arms
+ctx.fillStyle='#f48fb1';ctx.fillRect(px+1,py+16,8,10);ctx.fillRect(px+21,py+16,8,10);
+// Hands
+ctx.fillStyle='#ffcc99';ctx.fillRect(px+1,py+24,7,6);ctx.fillRect(px+22,py+24,7,6);
+// Hair (blonde)
+ctx.fillStyle='#FFD700';ctx.fillRect(px+6,py+4,18,12);
+ctx.fillRect(px+4,py+8,4,14);ctx.fillRect(px+22,py+8,4,14);
+// Face
+ctx.fillStyle='#ffcc99';ctx.fillRect(px+8,py+8,14,10);
+// Eyes
+ctx.fillStyle='#1a0080';ctx.fillRect(px+10,py+11,3,3);ctx.fillRect(px+17,py+11,3,3);
+// Crown
+ctx.fillStyle='#FFD700';ctx.fillRect(px+7,py+2,16,6);
+ctx.beginPath();ctx.moveTo(px+8,py+2);ctx.lineTo(px+10,py-4);ctx.lineTo(px+12,py+2);ctx.fill();
+ctx.beginPath();ctx.moveTo(px+13,py+2);ctx.lineTo(px+15,py-8);ctx.lineTo(px+17,py+2);ctx.fill();
+ctx.beginPath();ctx.moveTo(px+18,py+2);ctx.lineTo(px+20,py-4);ctx.lineTo(px+22,py+2);ctx.fill();
+ctx.fillStyle='#ff0000';ctx.beginPath();ctx.arc(px+15,py-6,2.5,0,Math.PI*2);ctx.fill();
+// Legs
+ctx.fillStyle='#ffcc99';ctx.fillRect(px+8+wo,py+50,9,6);ctx.fillRect(px+17-wo,py+50,9,6);
+// Caught heart
+if(peach.caught&&peachChase&&peachChase.catchT<80){
+ctx.fillStyle=`rgba(255,100,150,${1-(peachChase.catchT/80)})`;
+ctx.font='bold 28px monospace';ctx.textAlign='center';
+ctx.fillText('♥',px+peach.w/2,py-18);ctx.textAlign='left';}
+}
 // Star aura
 if(starTimer>0){const hue=(frame*12)%360;ctx.fillStyle=`hsla(${hue},100%,60%,0.3)`;ctx.beginPath();ctx.arc(mario.x+13,mario.y+mario.h/2,22,0,Math.PI*2);ctx.fill()}
 // Yoshi (behind Mario if mounted)
@@ -1016,13 +1330,30 @@ drawMario(mario.x,yoshi.mounted&&yoshi.alive?mario.y-12:mario.y,mario.facing,mar
 drawParticles();ctx.restore();drawScorePopups();
 // Combo HUD
 if(combo>1&&comboTimer>0){ctx.fillStyle=`rgba(255,100,50,${Math.min(1,comboTimer/20)})`;ctx.font='bold 16px "Press Start 2P",monospace';ctx.textAlign='center';ctx.fillText(`x${combo} COMBO!`,W/2,60);ctx.textAlign='left'}
-// Yoshi egg count HUD
-if(yoshi.alive&&yoshi.mounted&&yoshi.eatCount>0){ctx.fillStyle='#4CAF50';ctx.font='10px "Press Start 2P",monospace';ctx.fillText(`EAT:${yoshi.eatCount}/5`,10,H-10)}
+// Yoshi eat count & star countdown HUD
+if(yoshi.alive&&yoshi.mounted&&yoshi.eatCount>0){ctx.fillStyle='#4CAF50';ctx.font='10px "Press Start 2P",monospace';ctx.fillText(`EAT:${yoshi.eatCount}/10`,10,H-10)}
+if(starTimer>0&&!mario.dead){const hue2=(frame*8)%360;ctx.fillStyle=`hsl(${hue2},100%,55%)`;ctx.font='bold 11px "Press Start 2P",monospace';ctx.fillText(`★${Math.ceil(starTimer/60)}s`,yoshi.alive&&yoshi.mounted&&yoshi.eatCount>0?120:10,H-10)}
 ctx.restore();
-if(state==='start')drawOverlay('SUPER MARIO','CLICK or SPACE to START','#1a1a5e');
+if(state==='start'){
+ctx.fillStyle='rgba(0,0,0,0.78)';ctx.fillRect(0,0,W,H);
+ctx.textAlign='center';
+ctx.fillStyle='#FFD700';ctx.font='bold 22px "Press Start 2P",monospace';ctx.fillText('SUPER MARIO',W/2,100);
+ctx.fillStyle='#ff9944';ctx.font='9px "Press Start 2P",monospace';ctx.fillText('▶  TEST MODE — STAGE SELECT  ◀',W/2,130);
+const bw=130,bh=62,gap=18,bx0=(W-(4*bw+3*gap))/2,by=248;
+const bgC=['#1a3a1a','#1a2a3a','#2a1a3a','#3a1a1a'],selC=['#27ae60','#2980b9','#8e44ad','#c0392b'],lbl=['1-1','1-2','1-3','1-4'];
+for(let i=0;i<4;i++){const bx=bx0+i*(bw+gap),sel=selectedStage===i+1;
+ctx.fillStyle=sel?selC[i]:bgC[i];ctx.fillRect(bx,by,bw,bh);
+ctx.strokeStyle=sel?'#fff':'#444';ctx.lineWidth=sel?3:1;ctx.strokeRect(bx,by,bw,bh);
+if(sel){ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(bx,by,bw,bh/2);}
+ctx.fillStyle=sel?'#fff':'#888';ctx.font=`bold ${sel?17:15}px "Press Start 2P",monospace`;ctx.fillText(lbl[i],bx+bw/2,by+bh/2+7);
+if(sel){ctx.fillStyle='#FFD700';ctx.font='14px monospace';ctx.fillText('▼',bx+bw/2,by+bh+18);}}
+ctx.fillStyle='#aaa';ctx.font='8px "Press Start 2P",monospace';
+ctx.fillText('← → or 1-4 key : SELECT',W/2,358);
+ctx.fillText('SPACE / ENTER / CLICK : START',W/2,374);
+ctx.textAlign='left';}
 if(state==='dead')drawOverlay('MISS!',`${lives} LEFT\nCLICK or SPACE to CONTINUE`,'#4a1a1a');
 if(state==='over')drawOverlay('GAME OVER','CLICK or SPACE to RESTART','#2d0000');
-if(state==='win')drawOverlay('COURSE CLEAR!',`SCORE: ${score}\nCLICK or SPACE`,'#0a3a0a');
+if(state==='win')drawOverlay(currentLevel===4?'THANK YOU!':'COURSE CLEAR!',currentLevel===4?`PEACH IS SAVED!\nSCORE: ${score}\nCLICK or SPACE`:`SCORE: ${score}\nCLICK or SPACE`,'#0a3a0a');
 }
 
 (function loop(){update();draw();requestAnimationFrame(loop)})();
