@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const c=[];process.stdin.on('data',d=>c.push(d));process.stdin.on('end',()=>{try{const d=JSON.parse(Buffer.concat(c));const f=d.tool_input&&(d.tool_input.file_path||d.tool_input.new_path);if(f&&f.match(/mario-game.*\\.html$/i))console.log(JSON.stringify({systemMessage:'index.html を更新しました。ブラウザでリロードして動作確認してください。'}));}catch(e){}});\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
